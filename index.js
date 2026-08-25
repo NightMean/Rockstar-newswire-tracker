@@ -76,6 +76,23 @@ if (!DATE_FORMATS.includes(dateFormat)) {
     dateFormat = 'DD/MM/YYYY';
 }
 
+// Upper bound for checkLimit: a huge value would hammer the Rockstar API
+const MAX_CHECK_LIMIT = 20;
+let checkLimit = Math.max(1, config.checkLimit || 5);
+if (config.checkLimit > MAX_CHECK_LIMIT) {
+    log.warn(`[WARN] checkLimit ${config.checkLimit} exceeds the maximum of ${MAX_CHECK_LIMIT}; using ${MAX_CHECK_LIMIT}.`);
+    checkLimit = MAX_CHECK_LIMIT;
+}
+
+// Graceful shutdown: atomic writes and mark-after-delivery already make an
+// abrupt stop safe; this just makes intentional stops visible in the logs.
+['SIGTERM', 'SIGINT'].forEach(signal => {
+    process.on(signal, () => {
+        log.info(`[SHUTDOWN] Received ${signal}, exiting.`);
+        process.exit(0);
+    });
+});
+
 // Store articles for each genre: { genreName: [items] }
 const allArticles = {};
 
@@ -95,7 +112,7 @@ uniqueGenres.forEach(genre => {
         discordProfileName: config.discordProfileName || "Rockstar Newswire Tracker",
         discordAvatarUrl: config.discordAvatarUrl || DEFAULT_DISCORD_AVATAR_URL,
         dateFormat: dateFormat,
-        checkLimit: Math.max(1, config.checkLimit || 5), // Default 5, Min 1
+        checkLimit: checkLimit,
         onRSSUpdate: (items) => {
             log.info(`[RSS] Received ${items.length} articles for ${genre}`);
             allArticles[genre] = items;
