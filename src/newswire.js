@@ -39,7 +39,7 @@ const {
 } = require('https');
 const fs = require('fs');
 const path = require('path');
-const { formatDate, DEFAULT_DISCORD_AVATAR_URL } = require('./utils');
+const { formatDate, parseContent, DEFAULT_DISCORD_AVATAR_URL } = require('./utils');
 const log = require('./logger');
 const newsDir = path.join(__dirname, '../config/newswire_articles.json');
 const mainLink = 'https://graph.rockstargames.com?';
@@ -519,14 +519,38 @@ function getHashToken() {
     return tokenPromise;
 }
 
+// Fallback Chrome locations when Puppeteer has no bundled browser downloaded
+// (PUPPETEER_EXECUTABLE_PATH is honored by Puppeteer automatically; these are
+// only tried if the default launch fails).
+const CHROME_FALLBACK_PATHS = [
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    '/usr/bin/google-chrome-stable',
+];
+
+async function launchBrowser() {
+    const launchArgs = ['--no-sandbox', '--disable-setuid-sandbox'];
+    try {
+        return await puppeteer.launch({ headless: true, args: launchArgs });
+    } catch (e) {
+        for (const executablePath of CHROME_FALLBACK_PATHS) {
+            try {
+                return await puppeteer.launch({ headless: true, executablePath, args: launchArgs });
+            } catch (fallbackError) { /* try next location */ }
+        }
+        throw e;
+    }
+}
+
 async function fetchHashToken() {
-    const browser = await puppeteer.launch({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
+    const browser = await launchBrowser();
 
     try {
         const page = await browser.newPage();
+        // Rockstar serves an empty bot-wall page to CDP-automated browsers;
+        // hiding navigator.webdriver is enough to get the real page through.
+        await page.evaluateOnNewDocument(() => {
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+        });
         await page.setRequestInterception(true);
 
         // Resolves with the hash once the page issues its NewswireList request,
