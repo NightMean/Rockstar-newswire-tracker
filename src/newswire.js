@@ -530,11 +530,11 @@ async function fetchHashToken() {
         await page.setRequestInterception(true);
 
         // Resolves with the hash once the page issues its NewswireList request,
-        // or rejects if that never happens within TOKEN_WAIT_TIMEOUT ms.
+        // or rejects if that never happens within TOKEN_WAIT_TIMEOUT_MS ms.
         const hashFound = new Promise((resolve, reject) => {
             const timer = setTimeout(() => {
                 reject(new Error('Timed out waiting for NewswireList request on the Newswire page'));
-            }, TOKEN_WAIT_TIMEOUT);
+            }, TOKEN_WAIT_TIMEOUT_MS);
             page.on('request', interceptedRequest => {
                 if (interceptedRequest.url().includes('operationName=NewswireList')) {
                     let url = interceptedRequest.url();
