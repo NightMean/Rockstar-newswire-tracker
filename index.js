@@ -188,6 +188,13 @@ async function createFeedObject(title, description, linkPath) {
 // Start RSS Server if enabled
 if (config.enableRSS) {
     const server = http.createServer((req, res) => {
+        // Liveness endpoint for orchestrators; answers even while feeds initialize
+        if (req.url === '/healthz') {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ status: 'ok', version: packageJson.version }));
+            return;
+        }
+
         log.info(`[SERVER] Request: ${req.method} ${req.url}`);
 
         // Routing

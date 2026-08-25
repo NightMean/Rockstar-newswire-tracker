@@ -4,3 +4,4 @@ node_modules
 # Generated files
 feeds/
 config/newswire_articles.json
+config/*.tmp

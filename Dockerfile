@@ -20,9 +20,15 @@ WORKDIR /usr/src/app
 
 COPY package*.json ./
 
-RUN npm install
+# npm ci installs exactly what package-lock.json pins
+RUN npm ci
 
 COPY . .
+
+# Liveness probe for orchestrators: /healthz answers as soon as the HTTP
+# server is up (token fetch may take a while, hence the generous start period)
+HEALTHCHECK --interval=60s --timeout=10s --start-period=180s --retries=3 \
+    CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 
 # Run as the unprivileged 'node' user; Chrome launches with --no-sandbox
 USER node
