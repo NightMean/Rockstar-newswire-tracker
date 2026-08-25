@@ -687,5 +687,6 @@ async function fetchHashToken() {
 
 module.exports = {
     newswire,
-    getHashToken
+    getHashToken,
+    genres
 };

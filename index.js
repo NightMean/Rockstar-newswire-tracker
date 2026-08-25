@@ -2,7 +2,7 @@ const fs = require('fs');
 const http = require('http');
 const path = require('path');
 const yaml = require('js-yaml');
-const { newswire } = require('./src/newswire');
+const { newswire, genres: GENRE_TAG_IDS } = require('./src/newswire');
 const { sanitizeFeedFilename, isValidDiscordWebhookUrl, DEFAULT_DISCORD_AVATAR_URL } = require('./src/utils');
 const log = require('./src/logger');
 
@@ -37,6 +37,25 @@ if (config.enableDiscord && !isValidDiscordWebhookUrl(config.webhookUrl)) {
 }
 
 const genres = config.genres || ['latest'];
+// A genre listed twice would spawn two pollers for the same feed and can
+// double-send Discord notifications on the first poll race.
+const uniqueGenres = [...new Set(genres)];
+if (uniqueGenres.length !== genres.length) {
+    log.warn(`[WARN] Duplicate entries in config.genres were removed: ${genres.join(', ')}`);
+}
+
+// Warn when multiple enabled genres resolve to the same Rockstar tagId
+// (e.g. content_updates and updates both map to 705): the same content is
+// polled twice and the first instance to mark an article seen wins.
+const seenTagIds = new Map();
+for (const g of uniqueGenres) {
+    const tagId = GENRE_TAG_IDS[g];
+    if (tagId !== null && seenTagIds.has(tagId)) {
+        log.warn(`[WARN] Genres "${seenTagIds.get(tagId)}" and "${g}" share Rockstar tagId ${tagId}; enable only one of them.`);
+    } else {
+        seenTagIds.set(tagId, g);
+    }
+}
 const PORT = process.env.PORT || 3000;
 // Default to merged if not specified
 const MERGE_FEEDS = config.mergeFeeds !== false;
@@ -63,11 +82,11 @@ const allArticles = {};
 // Start Newswire Instances
 const packageJson = require('./package.json');
 log.info(`[INIT] Starting Rockstar Newswire Tracker v${packageJson.version}`);
-log.info(`[INIT] Enabled Genres: ${genres.join(', ')}`);
+log.info(`[INIT] Enabled Genres: ${uniqueGenres.join(', ')}`);
 log.info(`[INIT] Services: Discord=${config.enableDiscord}, RSS=${config.enableRSS}`);
 log.info(`[INIT] RSS Mode: ${MERGE_FEEDS ? 'Merged (feed.xml)' : 'Separate (feed-[genre].xml)'}`);
 
-genres.forEach(genre => {
+uniqueGenres.forEach(genre => {
     // We pass the config options to the class
     new newswire(genre, {
         webhookUrl: config.enableDiscord ? config.webhookUrl : null,
@@ -205,7 +224,7 @@ if (config.enableRSS) {
         } else {
             log.info(`[SERVER] RSS Feeds available at:`);
             log.info(`http://localhost:${PORT}/`); // Index page
-            genres.forEach(g => {
+            uniqueGenres.forEach(g => {
                 log.info(`http://localhost:${PORT}/feed-${g.replace(/_/g, '-')}.xml`);
             });
         }
