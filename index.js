@@ -2,7 +2,11 @@ const fs = require('fs');
 const http = require('http');
 const path = require('path');
 const yaml = require('js-yaml');
-const { newswire, genres: GENRE_TAG_IDS } = require('./src/newswire');
+const { genres: GENRE_TAG_IDS } = require('./src/newswireApi');
+const { NewswirePoller } = require('./src/poller');
+const { DiscordNotifier } = require('./src/discordNotifier');
+const articleStore = require('./src/articleStore');
+const { generateFeeds } = require('./src/feedGenerator');
 const { sanitizeFeedFilename, isValidDiscordWebhookUrl, DEFAULT_DISCORD_AVATAR_URL } = require('./src/utils');
 const log = require('./src/logger');
 
@@ -104,84 +108,30 @@ log.info(`[INIT] Services: Discord=${config.enableDiscord}, RSS=${config.enableR
 log.info(`[INIT] RSS Mode: ${MERGE_FEEDS ? 'Merged (feed.xml)' : 'Separate (feed-[genre].xml)'}`);
 
 uniqueGenres.forEach(genre => {
-    // We pass the config options to the class
-    new newswire(genre, {
-        webhookUrl: config.enableDiscord ? config.webhookUrl : null,
-        enableRSS: config.enableRSS,
-        refreshInterval: refreshIntervalMinutes * 60 * 1000, // Convert minutes to ms
-        discordProfileName: config.discordProfileName || "Rockstar Newswire Tracker",
-        discordAvatarUrl: config.discordAvatarUrl || DEFAULT_DISCORD_AVATAR_URL,
-        dateFormat: dateFormat,
-        checkLimit: checkLimit,
+    new NewswirePoller({
+        genre,
+        tagId: GENRE_TAG_IDS[genre],
+        store: articleStore,
+        notifier: new DiscordNotifier({
+            webhookUrl: config.enableDiscord ? config.webhookUrl : null,
+            profileName: config.discordProfileName || "Rockstar Newswire Tracker",
+            avatarUrl: config.discordAvatarUrl || DEFAULT_DISCORD_AVATAR_URL,
+            dateFormat: dateFormat
+        }),
+        options: {
+            enableRSS: config.enableRSS,
+            refreshInterval: refreshIntervalMinutes * 60 * 1000, // Convert minutes to ms
+            checkLimit: checkLimit
+        },
         onRSSUpdate: (items) => {
             log.info(`[RSS] Received ${items.length} articles for ${genre}`);
             allArticles[genre] = items;
-            generateRSS().catch(e => {
+            generateFeeds(allArticles, { feedsDir: FEEDS_DIR, mergeFeeds: MERGE_FEEDS }).catch(e => {
                 log.error('[ERROR] Failed to generate RSS feed:', e);
             });
         }
     });
 });
-
-async function generateRSS() {
-    if (MERGE_FEEDS) {
-        // Collect ALL items from all updated genres
-        let mergedItems = [];
-        Object.values(allArticles).forEach(items => {
-            mergedItems = mergedItems.concat(items);
-        });
-
-        // Sort by date descending
-        mergedItems.sort((a, b) => b.date - a.date);
-
-        const feed = await createFeedObject("Rockstar Newswire (Merged)", "Latest news from Rockstar Games (All Genres)", "feed.xml");
-        mergedItems.forEach(item => feed.addItem(item));
-
-        try {
-            fs.writeFileSync(path.join(FEEDS_DIR, 'feed.xml'), feed.rss2());
-        } catch (e) {
-            log.error('[RSS] Failed to write feed.xml:', e);
-        }
-
-    } else {
-        // Generate separate feeds for each genre present in allArticles
-        // We need to use for...of to await async creation
-        for (const genre of Object.keys(allArticles)) {
-            const items = allArticles[genre];
-            const urlGenre = genre.replace(/_/g, '-');
-            const filename = `feed-${urlGenre}.xml`;
-            const feed = await createFeedObject(`Rockstar Newswire (${genre})`, `Latest news for ${genre}`, filename);
-
-            items.forEach(item => feed.addItem(item));
-
-            try {
-                fs.writeFileSync(path.join(FEEDS_DIR, filename), feed.rss2());
-            } catch (e) {
-                log.error(`[RSS] Failed to write ${filename}:`, e);
-            }
-        }
-    }
-}
-
-async function createFeedObject(title, description, linkPath) {
-    const { Feed } = await import('feed');
-    return new Feed({
-        title: title,
-        description: description,
-        id: "https://www.rockstargames.com/newswire",
-        link: "https://www.rockstargames.com/newswire",
-        language: "en",
-        image: "https://img.icons8.com/color/48/000000/rockstar-games.png",
-        favicon: "https://www.rockstargames.com/favicon.ico",
-        copyright: "All rights reserved by Rockstar Games",
-        updated: new Date(),
-        generator: "Rockstar Newswire RSS Generator",
-        author: {
-            name: "Rockstar Games",
-            link: "https://www.rockstargames.com"
-        }
-    });
-}
 
 // Start RSS Server if enabled
 if (config.enableRSS) {

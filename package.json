@@ -2,7 +2,7 @@
   "name": "rockstar-newswire",
   "version": "2.1.0",
   "description": "Bring GTA V/Red dead 2/Latest News to your discord server or RSS feed.",
-  "main": "src/newswire.js",
+  "main": "src/poller.js",
   "engines": {
     "node": ">=18"
   },
