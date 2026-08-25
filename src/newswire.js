@@ -596,17 +596,21 @@ function escapeHtml(value) {    return String(value)
 }
 
 function addArticle(article, url) {
-    if (articles) {
-        if (!articles[article]) {
-            articles[article] = url;
-            try {
-                fs.writeFileSync(newsDir, JSON.stringify(articles, null, 2));
-            } catch (err) {
-                console.error('[ERROR] Failed to save articles to db:', err);
-            }
-        } else {
-            console.log('Article ID: ' + article + ' already exists in database.');
-        }
+    if (!articles) return;
+    if (articles[article]) {
+        console.log('Article ID: ' + article + ' already exists in database.');
+        return;
+    }
+
+    articles[article] = url;
+    try {
+        // Write-then-rename so a crash mid-write cannot corrupt the seen-articles
+        // DB (a corrupt file previously reset all history and re-spammed Discord).
+        const tmpPath = newsDir + '.tmp';
+        fs.writeFileSync(tmpPath, JSON.stringify(articles, null, 2));
+        fs.renameSync(tmpPath, newsDir);
+    } catch (err) {
+        console.error('[ERROR] Failed to save articles to db:', err);
     }
 }
 
