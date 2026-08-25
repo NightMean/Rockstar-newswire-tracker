@@ -26,23 +26,28 @@ class NewswirePoller {
         this.enableRSS = Boolean(options.enableRSS);
         this.refreshInterval = options.refreshInterval || DEFAULT_REFRESH_INTERVAL_MS;
         this.checkLimit = options.checkLimit || DEFAULT_CHECK_LIMIT;
-        this.api = new NewswireApi(tagId);
+        // Injection seams (defaults are the real implementations; tests substitute fakes)
+        this.api = options.api || new NewswireApi(tagId);
+        this.acquireHash = options.acquireHash || acquireHashWithRetries;
+        this.rateLimitDelayMs = options.rateLimitDelayMs ?? RATE_LIMIT_DELAY_MS;
         // Rotating persisted-query hash; fetched at startup, refreshed on expiry.
         this.hash = null;
 
         // Error boundary: a rejected start() must never become an unhandled
         // rejection (that would kill the whole process). The failing genre
         // stops being polled and the error is logged loudly instead.
-        this.start().catch(e => {
-            log.error(`[ERROR] Startup failed for genre "${this.genre}"; it will not be polled:`, e);
-        });
+        if (options.autoStart !== false) {
+            this.start().catch(e => {
+                log.error(`[ERROR] Startup failed for genre "${this.genre}"; it will not be polled:`, e);
+            });
+        }
     }
 
     async start() {
         await this.store.whenLoaded();
 
         log.info('[READY] Started news feed for ' + this.genre + '.');
-        this.hash = await acquireHashWithRetries();
+        this.hash = await this.acquireHash();
 
         if (this.enableRSS) {
             await this.updateRSS();
@@ -95,7 +100,7 @@ class NewswirePoller {
 
         log.info('[HASH] Token has expired, generating new one.');
         try {
-            this.hash = await acquireHashWithRetries();
+            this.hash = await this.acquireHash();
         } catch (e) {
             log.error('[ERROR] Token refresh failed:', e.message);
             return null;
@@ -163,7 +168,7 @@ class NewswirePoller {
             } else {
                 log.error(`[ERROR] Failed to deliver article ${article.id}; will retry next refresh.`);
             }
-            await new Promise(r => setTimeout(r, RATE_LIMIT_DELAY_MS)); // Rate limit between sends
+            await new Promise(r => setTimeout(r, this.rateLimitDelayMs)); // Rate limit between sends
         }
     }
 
