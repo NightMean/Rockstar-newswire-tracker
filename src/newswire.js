@@ -41,12 +41,16 @@ const fs = require('fs');
 const path = require('path');
 const newsDir = path.join(__dirname, '../config/newswire_articles.json');
 const mainLink = 'https://graph.rockstargames.com?';
+const REQUEST_TIMEOUT_MS = 30000;
+const PAGE_LOAD_TIMEOUT_MS = 60000;
+const TOKEN_WAIT_TIMEOUT_MS = 90000;
+const DEFAULT_REFRESH_INTERVAL_MS = 7.2e+6; // 2 hours in milliseconds
 const requestOptions = {
     method: 'POST',
     headers: {
         'Content-Type': 'application/json',
     },
-    timeout: 30000,
+    timeout: REQUEST_TIMEOUT_MS,
 };
 let articles, newsHash;
 
@@ -80,7 +84,7 @@ class newswire {
         this.webhook = options.webhookUrl;
         this.enableRSS = options.enableRSS;
         this.onRSSUpdate = options.onRSSUpdate; // Callback for RSS data
-        this.refreshInterval = options.refreshInterval || 7.2e+6;
+        this.refreshInterval = options.refreshInterval || DEFAULT_REFRESH_INTERVAL_MS;
         this.discordProfileName = options.discordProfileName;
         this.discordAvatarUrl = options.discordAvatarUrl;
         this.dateFormat = options.dateFormat;
@@ -114,23 +118,35 @@ class newswire {
             }
         }
 
+        this.isRefreshing = false;
         setInterval(async _ => {
-            console.log('[REFRESH] Refreshing news feed for ' + this.genre);
-
-            if (this.enableRSS) {
-                const items = await this.updateRSS();
-                if (this.onRSSUpdate) this.onRSSUpdate(items);
+            // Skip a tick if the previous refresh is still running (e.g. slow
+            // article fetches) so ticks never overlap and double-send.
+            if (this.isRefreshing) {
+                console.log(`[REFRESH] Previous refresh for ${this.genre} still in progress, skipping tick.`);
+                return;
             }
+            this.isRefreshing = true;
+            try {
+                console.log('[REFRESH] Refreshing news feed for ' + this.genre);
 
-            newArticles = await this.getNewArticles();
-            if (newArticles && newArticles.length > 0) {
-                newArticles.reverse(); // Send oldest first
-                for (const article of newArticles) {
-                    this.sendArticle(article);
-                    await new Promise(r => setTimeout(r, 1000)); // Rate limit 1s
+                if (this.enableRSS) {
+                    const items = await this.updateRSS();
+                    if (this.onRSSUpdate) this.onRSSUpdate(items);
                 }
-            } else {
-                console.log(`[CHECK] No new articles found for ${this.genre}`);
+
+                newArticles = await this.getNewArticles();
+                if (newArticles && newArticles.length > 0) {
+                    newArticles.reverse(); // Send oldest first
+                    for (const article of newArticles) {
+                        this.sendArticle(article);
+                        await new Promise(r => setTimeout(r, 1000)); // Rate limit 1s
+                    }
+                } else {
+                    console.log(`[CHECK] No new articles found for ${this.genre}`);
+                }
+            } finally {
+                this.isRefreshing = false;
             }
         }, this.refreshInterval);
     }
@@ -494,41 +510,50 @@ class newswire {
         return (autoHtml + contentHtml) || post.title;
     }
 
-    async processRequest() {
-        return new Promise(async (resolve, reject) => {
-            const searchParams = new URLSearchParams([
-                ['operationName', 'NewswireList'],
-                ['variables', JSON.stringify({
-                    page: 1,
-                    tagId: this.genreID,
-                    metaUrl: '/newswire',
-                    locale: 'en_us'
-                })],
-                ['extensions', JSON.stringify({
-                    persistedQuery: {
-                        version: 1,
-                        sha256Hash: newsHash
-                    }
-                })]
-            ]);
+    processRequest() {
+        const searchParams = new URLSearchParams([
+            ['operationName', 'NewswireList'],
+            ['variables', JSON.stringify({
+                page: 1,
+                tagId: this.genreID,
+                metaUrl: '/newswire',
+                locale: 'en_us'
+            })],
+            ['extensions', JSON.stringify({
+                persistedQuery: {
+                    version: 1,
+                    sha256Hash: newsHash
+                }
+            })]
+        ]);
 
+        return new Promise((resolve, reject) => {
             const req = request(mainLink + searchParams.toString(), requestOptions, (res) => {
-                if (res.statusCode < 200 || res.statusCode > 299)
+                if (res.statusCode < 200 || res.statusCode > 299) {
+                    // Consume the body so the socket is freed, then fail with status context
+                    res.resume();
                     reject(new Error('[ERROR] Unable to process request: ' + res.statusCode + '\nReason: ' + res.statusMessage));
+                    return;
+                }
+
                 res.setEncoding('utf8');
                 let responseBody = "";
                 res.on('data', (chunk) => {
                     responseBody += chunk;
                 });
-
                 res.on('end', () => {
-                    resolve(JSON.parse(responseBody));
+                    try {
+                        resolve(JSON.parse(responseBody));
+                    } catch (e) {
+                        reject(new Error('Failed to parse API response as JSON: ' + e.message));
+                    }
                 });
             });
-            req.on('error', (err) => {
-                reject(err);
+            req.on('timeout', () => {
+                // Destroying the socket emits 'error' below, which rejects
+                req.destroy(new Error('Request timed out after ' + requestOptions.timeout + 'ms'));
             });
-
+            req.on('error', reject);
             req.end();
         });
     }
@@ -550,43 +575,57 @@ function addArticle(article, url) {
 }
 
 let tokenPromise = null;
-async function getHashToken() {
+function getHashToken() {
     if (tokenPromise) return tokenPromise;
     console.log('[INIT] Fetching API Token (this may take a minute)...');
-    tokenPromise = new Promise(async (res, rej) => {
-        try {
-            const browser = await puppeteer.launch({
-                headless: true,
-                args: ['--no-sandbox', '--disable-setuid-sandbox']
-            });
-            const page = await browser.newPage();
-            await page.setRequestInterception(true);
+    tokenPromise = fetchHashToken();
+    // Allow a retry on the next call if this attempt failed
+    tokenPromise.catch(() => { tokenPromise = null; });
+    return tokenPromise;
+}
+
+async function fetchHashToken() {
+    const browser = await puppeteer.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+
+    try {
+        const page = await browser.newPage();
+        await page.setRequestInterception(true);
+
+        // Resolves with the hash once the page issues its NewswireList request,
+        // or rejects if that never happens within TOKEN_WAIT_TIMEOUT ms.
+        const hashFound = new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+                reject(new Error('Timed out waiting for NewswireList request on the Newswire page'));
+            }, TOKEN_WAIT_TIMEOUT);
             page.on('request', interceptedRequest => {
                 if (interceptedRequest.url().includes('operationName=NewswireList')) {
                     let url = interceptedRequest.url();
                     let params = url.split('?')[1];
                     let query = new URLSearchParams(params);
-                    let hash = '';
                     for (let pair of query.entries()) {
                         if (pair[0] == 'extensions' && pair[1]) {
-                            hash = JSON.parse(pair[1])['persistedQuery']['sha256Hash'];
+                            clearTimeout(timer);
                             interceptedRequest.abort();
-                            browser.close();
-                            res(hash);
+                            resolve(JSON.parse(pair[1])['persistedQuery']['sha256Hash']);
+                            return;
                         }
                     }
-                } else {
-                    interceptedRequest.continue();
                 }
+                interceptedRequest.continue();
             });
-            page.goto('https://www.rockstargames.com/newswire');
-        } catch (e) {
-            tokenPromise = null; // Reset on failure so we can try again
-            rej(e.stack);
-        }
-    });
-    return tokenPromise;
-};
+        });
+
+        await page.goto('https://www.rockstargames.com/newswire', { waitUntil: 'networkidle2', timeout: PAGE_LOAD_TIMEOUT });
+        return await hashFound;
+    } catch (e) {
+        throw (e instanceof Error) ? e : new Error(String(e));
+    } finally {
+        try { await browser.close(); } catch (e) { /* browser already closed */ }
+    }
+}
 
 module.exports = {
     newswire,
