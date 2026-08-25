@@ -1,6 +1,8 @@
 // Shared pure helpers. Kept free of network/browser/file dependencies so
 // they can be unit-tested without loading the newswire module.
 
+const DEFAULT_DISCORD_AVATAR_URL = "https://yt3.googleusercontent.com/-jCZaDR8AoEgC6CBPWFubF2PMSOTGU3nJ4VOSo7aq3W6mR8tcRCgygd8fS-4Ra41oHPo3F3P=s900-c-k-c0x00ffffff-no-rj";
+
 function escapeHtml(value) {
     return String(value)
         .replace(/&/g, '&amp;')
@@ -41,6 +43,7 @@ function isValidDiscordWebhookUrl(url) {
 }
 
 module.exports = {
+    DEFAULT_DISCORD_AVATAR_URL,
     escapeHtml,
     formatDate,
     sanitizeFeedFilename,

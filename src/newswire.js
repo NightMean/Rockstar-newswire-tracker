@@ -39,7 +39,7 @@ const {
 } = require('https');
 const fs = require('fs');
 const path = require('path');
-const { escapeHtml, formatDate } = require('./utils');
+const { escapeHtml, formatDate, DEFAULT_DISCORD_AVATAR_URL } = require('./utils');
 const newsDir = path.join(__dirname, '../config/newswire_articles.json');
 const mainLink = 'https://graph.rockstargames.com?';
 const REQUEST_TIMEOUT_MS = 30000;
@@ -158,7 +158,7 @@ class newswire {
                 'author': {
                     'name': 'Rockstar Newswire',
                     'url': 'https://www.rockstargames.com/newswire',
-                    'icon_url': 'https://yt3.googleusercontent.com/-jCZaDR8AoEgC6CBPWFubF2PMSOTGU3nJ4VOSo7aq3W6mR8tcRCgygd8fS-4Ra41oHPo3F3P=s900-c-k-c0x00ffffff-no-rj'
+                    'icon_url': DEFAULT_DISCORD_AVATAR_URL
                 },
                 'title': article.title,
                 'url': article.link,

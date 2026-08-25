@@ -3,7 +3,7 @@ const http = require('http');
 const path = require('path');
 const yaml = require('js-yaml');
 const { newswire } = require('./src/newswire');
-const { sanitizeFeedFilename, isValidDiscordWebhookUrl } = require('./src/utils');
+const { sanitizeFeedFilename, isValidDiscordWebhookUrl, DEFAULT_DISCORD_AVATAR_URL } = require('./src/utils');
 
 // Feed output directory, created on startup so fresh installs can write feeds
 const FEEDS_DIR = path.join(__dirname, 'feeds');
@@ -73,7 +73,7 @@ genres.forEach(genre => {
         enableRSS: config.enableRSS,
         refreshInterval: refreshIntervalMinutes * 60 * 1000, // Convert minutes to ms
         discordProfileName: config.discordProfileName || "Rockstar Newswire Tracker",
-        discordAvatarUrl: config.discordAvatarUrl || "https://yt3.googleusercontent.com/-jCZaDR8AoEgC6CBPWFubF2PMSOTGU3nJ4VOSo7aq3W6mR8tcRCgygd8fS-4Ra41oHPo3F3P=s900-c-k-c0x00ffffff-no-rj",
+        discordAvatarUrl: config.discordAvatarUrl || DEFAULT_DISCORD_AVATAR_URL,
         dateFormat: dateFormat,
         checkLimit: Math.max(1, config.checkLimit || 5), // Default 5, Min 1
         onRSSUpdate: (items) => {

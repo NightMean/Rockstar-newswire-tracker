@@ -1,8 +1,8 @@
 FROM node:22-slim
 
-# Install latest chrome dev package and fonts to support major charsets (Chinese, Japanese, Arabic, Hebrew, Thai and a few others)
-# Note: this installs the necessary libs to make the bundled version of Chromium that Puppeteer
-# installs, work.
+# Install google-chrome-stable and fonts to support major charsets (Chinese, Japanese,
+# Arabic, Hebrew, Thai and a few others). Puppeteer is configured below to use this
+# system Chrome instead of downloading its own bundled Chromium.
 RUN apt-get update \
     && apt-get install -y wget gnupg \
     && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/googlechrome-linux-keyring.gpg \
@@ -12,10 +12,9 @@ RUN apt-get update \
     --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
-# Update Puppeteer to use installed Chrome if desired, or just rely on bundled chromium with dependencies installed above
-# We'll set ENV to tell puppeteer to skip download if we wanted to use system chrome, but for now we let it download its compatible revision
-# Just in case, we can set P_SKIP_CHROMIUM_DOWNLOAD=true and executable path if we prefer system chrome. 
-# But standard practice for simplicity: let puppeteer download its own, we just provided libs.
+# Use the system Chrome; skip Puppeteer's own Chromium download
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
 
 WORKDIR /usr/src/app
 
@@ -24,6 +23,9 @@ COPY package*.json ./
 RUN npm install
 
 COPY . .
+
+# Run as the unprivileged 'node' user; Chrome launches with --no-sandbox
+USER node
 
 # Expose port (if RSS is enabled)
 EXPOSE 3000

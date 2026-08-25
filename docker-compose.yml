@@ -10,11 +10,11 @@ services:
       # Mount config folder containing config.yaml and newswire.json
       - ./config:/usr/src/app/config
     environment:
-      # Set to true to skip chromium download if we used installed chrome, 
-      # but we let puppeteer manage it in Dockerfile for fewer headaches with version mismatch.
-      - P_SKIP_CHROMIUM_DOWNLOAD=true
+      # Skip Puppeteer's bundled Chromium download; the image uses system Chrome
+      # (already set in the Dockerfile, repeated here for local builds).
+      - PUPPETEER_SKIP_DOWNLOAD=true
       - PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
-      - TZ=Europe/Bratislava
+      - TZ=${TZ:-UTC}
       # Optional: Override the webhook URL from config.yaml.
       # If not set here, it uses the value from ./config/config.yaml
       # - DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...

@@ -39,9 +39,9 @@ services:
       # Mount config folder containing config.yaml and newswire.json
       - ./config:/usr/src/app/config
     environment:
-      - P_SKIP_CHROMIUM_DOWNLOAD=true
+      - PUPPETEER_SKIP_DOWNLOAD=true
       - PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
-      - TZ=Europe/Bratislava
+      - TZ=Europe/Bratislava # Change to your timezone, or use ${TZ} from the host
       # Optional: Override the webhook URL from config.yaml.
       # If not set here, it uses the value from ./config/config.yaml
       # - DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
@@ -121,7 +121,7 @@ For developers who want to integrate the newswire into their own applications:
     }
 */
 
-const { newswire } = require('./newswire');
+const { newswire } = require('./src/newswire');
 const tracker = new newswire('gta_online', {
     webhookUrl: 'https://discord.com/api/webhooks/...',
     enableRSS: true,
