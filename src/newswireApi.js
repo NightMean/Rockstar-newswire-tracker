@@ -250,10 +250,10 @@ async function fetchHashToken() {
             }, TOKEN_WAIT_TIMEOUT_MS);
             page.on('request', interceptedRequest => {
                 if (interceptedRequest.url().includes('operationName=NewswireList')) {
-                    let url = interceptedRequest.url();
-                    let params = url.split('?')[1];
-                    let query = new URLSearchParams(params);
-                    for (let pair of query.entries()) {
+                    const url = interceptedRequest.url();
+                    const params = url.split('?')[1];
+                    const query = new URLSearchParams(params);
+                    for (const pair of query.entries()) {
                         if (pair[0] == 'extensions' && pair[1]) {
                             clearTimeout(timer);
                             interceptedRequest.abort();

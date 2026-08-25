@@ -84,7 +84,7 @@ class NewswirePoller {
     // reports the persisted query as unknown. Resolves to the response object,
     // or null if the request ultimately failed.
     async requestListWithTokenRefresh() {
-        let res = await this.api.fetchList(this.hash).catch(e => {
+        const res = await this.api.fetchList(this.hash).catch(e => {
             log.error(`[ERROR] Newswire list request failed for ${this.genre}:`, e.message);
             return null;
         });

@@ -8,7 +8,8 @@
   },
   "scripts": {
     "start": "node index.js",
-    "test": "node --test"
+    "test": "node --test",
+    "lint": "eslint ."
   },
   "keywords": [
     "news",
@@ -37,5 +38,9 @@
     "feed": "^5.1.0",
     "js-yaml": "^4.1.1",
     "puppeteer": "^24.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.9.1"
   }
 }
