@@ -1,7 +1,7 @@
 services:
   rockstar-newswire-tracker:
     # build: . # Use this if you want to build locally
-    image: nightmean/rockstar-newswire:2.1.0
+    image: nightmean/rockstar-newswire:2.1.1
     container_name: rockstar-newswire-tracker
     restart: unless-stopped
     ports:
