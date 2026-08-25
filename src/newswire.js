@@ -396,10 +396,10 @@ class newswire {
         const imgBase = "https://media-rockstargames-com.akamaized.net";
         let autoHtml = "";
 
-        // Add Subtitle
+        // Add Subtitle (escaped: CMS text interpolated into HTML)
         const subtitle = post.subtitle || (post.tina.payload.meta && post.tina.payload.meta.subtitle);
         if (subtitle) {
-            autoHtml += `<h3><strong>${subtitle}</strong></h3><br/>`;
+            autoHtml += `<h3><strong>${escapeHtml(subtitle)}</strong></h3><br/>`;
         }
 
         const traverse = (node) => {
@@ -426,16 +426,16 @@ class newswire {
                                     if (src.startsWith('/')) src = imgBase + src;
                                     const alt = imgEntry.image._memoq?.alt || "Article Image";
                                     // Removing conflicting styles, just standard img
-                                    sectionHtml += `<img src="${src}" alt="${alt}" /><br/>`;
+                                    sectionHtml += `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" /><br/>`;
                                 }
                             }
                         });
                     }
 
-                    // 2. Title (Heading)
+                    // 2. Title (Heading) (escaped: CMS text interpolated into HTML)
                     if (node._memoq && node._memoq.title) {
                         // User stated heading 2 shows, so we upgrading to h2 + strong to match standard headers
-                        sectionHtml += `<h2><strong>${node._memoq.title}</strong></h2>`;
+                        sectionHtml += `<h2><strong>${escapeHtml(node._memoq.title)}</strong></h2>`;
                     }
 
                     // 3. Content (Recursive)
@@ -452,6 +452,9 @@ class newswire {
                 }
 
                 // Handle HTMLElement (Raw HTML)
+                // Intentionally NOT escaped: Rockstar ships ready-made embed markup
+                // (e.g. YouTube iframes) through this node type; escaping it would
+                // break the embed feature. Text nodes we compose ourselves are escaped above.
                 if (node._template === 'HTMLElement' && node._memoq && node._memoq.content) {
                     return node._memoq.content + "<br/>";
                 }
@@ -559,6 +562,15 @@ class newswire {
     }
 }
 
+function escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 function addArticle(article, url) {
     if (articles) {
         if (!articles[article]) {
@@ -629,5 +641,6 @@ async function fetchHashToken() {
 
 module.exports = {
     newswire,
-    getHashToken
+    getHashToken,
+    escapeHtml
 };

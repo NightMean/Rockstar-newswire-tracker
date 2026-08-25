@@ -3,6 +3,10 @@
   "version": "2.0.1",
   "description": "Bring GTA V/Red dead 2/Latest News to your discord server or RSS feed.",
   "main": "newswire.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test"
+  },
   "keywords": [
     "news",
     "gtav",
