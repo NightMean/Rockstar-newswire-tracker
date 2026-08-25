@@ -552,8 +552,12 @@ async function fetchHashToken() {
                 interceptedRequest.continue();
             });
         });
+        // If navigation fails first, this promise would otherwise sit pending
+        // and its timeout rejection later become an unhandled rejection that
+        // kills the whole process. The real error is thrown from below instead.
+        hashFound.catch(() => { });
 
-        await page.goto('https://www.rockstargames.com/newswire', { waitUntil: 'networkidle2', timeout: PAGE_LOAD_TIMEOUT });
+        await page.goto('https://www.rockstargames.com/newswire', { waitUntil: 'networkidle2', timeout: PAGE_LOAD_TIMEOUT_MS });
         return await hashFound;
     } catch (e) {
         throw (e instanceof Error) ? e : new Error(String(e));
