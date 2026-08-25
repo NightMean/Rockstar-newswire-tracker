@@ -139,7 +139,6 @@ async function generateRSS() {
 
         try {
             fs.writeFileSync(path.join(FEEDS_DIR, 'feed.xml'), feed.rss2());
-            // log.info('[RSS] Merged feed.xml updated.');
         } catch (e) {
             log.error('[RSS] Failed to write feed.xml:', e);
         }
@@ -157,7 +156,6 @@ async function generateRSS() {
 
             try {
                 fs.writeFileSync(path.join(FEEDS_DIR, filename), feed.rss2());
-                // log.info(`[RSS] ${filename} updated.`);
             } catch (e) {
                 log.error(`[RSS] Failed to write ${filename}:`, e);
             }
