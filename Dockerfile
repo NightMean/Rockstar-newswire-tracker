@@ -25,6 +25,10 @@ RUN npm ci
 
 COPY . .
 
+# Pre-create the feeds output directory writable by the runtime user
+# (the container runs as 'node', which cannot write into the root-owned app dir)
+RUN mkdir -p /usr/src/app/feeds && chown node:node /usr/src/app/feeds
+
 # Liveness probe for orchestrators: /healthz answers as soon as the HTTP
 # server is up (token fetch may take a while, hence the generous start period)
 HEALTHCHECK --interval=60s --timeout=10s --start-period=180s --retries=3 \
