@@ -80,7 +80,9 @@ genres.forEach(genre => {
         onRSSUpdate: (items) => {
             log.info(`[RSS] Received ${items.length} articles for ${genre}`);
             allArticles[genre] = items;
-            generateRSS();
+            generateRSS().catch(e => {
+                log.error('[ERROR] Failed to generate RSS feed:', e);
+            });
         }
     });
 });

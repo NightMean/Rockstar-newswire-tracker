@@ -50,6 +50,8 @@ const DEFAULT_REFRESH_INTERVAL_MS = 7.2e+6; // 2 hours in milliseconds
 const RATE_LIMIT_DELAY_MS = 1000;
 const DISCORD_SEND_RETRIES = 3;
 const DISCORD_RETRY_DELAY_MS = 2000;
+const TOKEN_FETCH_ATTEMPTS = 3;
+const TOKEN_RETRY_DELAY_MS = 5000;
 const requestOptions = {
     method: 'POST',
     headers: {
@@ -97,19 +99,20 @@ class newswire {
         this.dateFormat = options.dateFormat;
         this.checkLimit = options.checkLimit || 5;
 
-        // Remove direct main() call from constructor to allow async/better flow control if needed, 
-        // but for now keeping it to match original behavior but invoking with new config
-        this.main();
+        // Error boundary: a rejected main() must never become an unhandled
+        // rejection (that would kill the whole process). The failing genre
+        // stops being polled and the error is logged loudly instead.
+        this.main().catch(e => {
+            log.error(`[ERROR] Startup failed for genre "${this.genre}"; it will not be polled:`, e);
+        });
     }
 
     async main() {
         // Ensure data is loaded before starting
         await articlesLoaded;
 
-        // log.info('[READY] Started news feed for ' + this.genre + '. Feed refreshes every ' + (this.refreshInterval / 60000) + ' minutes.');
-        // log.info('[INIT] Fetching API Token (this may take a minute)...'); // Moved to getHashToken
         log.info('[READY] Started news feed for ' + this.genre + '.');
-        newsHash = await getHashToken();
+        newsHash = await acquireHashWithRetries();
 
         if (this.enableRSS) {
             const items = await this.updateRSS();
@@ -138,6 +141,11 @@ class newswire {
 
                 newArticles = await this.getNewArticles();
                 await this.processNewArticles(newArticles);
+            } catch (e) {
+                // Error boundary for the poll cycle: without this, a rejection
+                // escapes the async interval callback as an unhandled rejection
+                // and terminates the whole process.
+                log.error(`[ERROR] Poll cycle failed for ${this.genre}:`, e);
             } finally {
                 this.isRefreshing = false;
             }
@@ -309,7 +317,7 @@ class newswire {
 
             if (!res || !res.data || !res.data.posts) {
                 log.info('[RSS] No data received.');
-                return;
+                return []; // Always resolve to an array — callers iterate the result
             }
 
             const posts = res.data.posts.results;
@@ -595,6 +603,25 @@ function addArticle(article, url) {
 }
 
 let tokenPromise = null;
+
+// Fetches the rotating API hash, retrying a bounded number of times so a
+// transient Chrome/page failure doesn't kill the genre's startup.
+async function acquireHashWithRetries() {
+    let lastError;
+    for (let attempt = 1; attempt <= TOKEN_FETCH_ATTEMPTS; attempt++) {
+        try {
+            return await getHashToken();
+        } catch (e) {
+            lastError = e;
+            log.error(`[ERROR] Token fetch failed (attempt ${attempt}/${TOKEN_FETCH_ATTEMPTS}):`, e.message);
+            if (attempt < TOKEN_FETCH_ATTEMPTS) {
+                await new Promise(r => setTimeout(r, TOKEN_RETRY_DELAY_MS));
+            }
+        }
+    }
+    throw lastError;
+}
+
 function getHashToken() {
     if (tokenPromise) return tokenPromise;
     log.info('[INIT] Fetching API Token (this may take a minute)...');
