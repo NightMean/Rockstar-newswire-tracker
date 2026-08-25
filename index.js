@@ -1,7 +1,12 @@
 const fs = require('fs');
 const http = require('http');
+const path = require('path');
 const yaml = require('js-yaml');
 const { newswire } = require('./src/newswire');
+
+// Feed output directory, created on startup so fresh installs can write feeds
+const FEEDS_DIR = path.join(__dirname, 'feeds');
+fs.mkdirSync(FEEDS_DIR, { recursive: true });
 
 // Load Configuration
 let config;
@@ -72,10 +77,10 @@ async function generateRSS() {
         mergedItems.forEach(item => feed.addItem(item));
 
         try {
-            fs.writeFileSync('./feeds/feed.xml', feed.rss2());
+            fs.writeFileSync(path.join(FEEDS_DIR, 'feed.xml'), feed.rss2());
             // console.log('[RSS] Merged feed.xml updated.');
         } catch (e) {
-            console.error('[RSS] Failed to write ./feeds/feed.xml:', e);
+            console.error('[RSS] Failed to write feed.xml:', e);
         }
 
     } else {
@@ -90,10 +95,10 @@ async function generateRSS() {
             items.forEach(item => feed.addItem(item));
 
             try {
-                fs.writeFileSync(`./feeds/${filename}`, feed.rss2());
+                fs.writeFileSync(path.join(FEEDS_DIR, filename), feed.rss2());
                 // console.log(`[RSS] ${filename} updated.`);
             } catch (e) {
-                console.error(`[RSS] Failed to write ./feeds/${filename}:`, e);
+                console.error(`[RSS] Failed to write ${filename}:`, e);
             }
         }
     }
@@ -148,7 +153,7 @@ if (config.enableRSS) {
         }
 
         if (targetFile) {
-            fs.readFile(`./feeds/${targetFile}`, (err, content) => {
+            fs.readFile(path.join(FEEDS_DIR, targetFile), (err, content) => {
                 if (err) {
                     if (err.code === 'ENOENT') {
                         res.writeHead(503, { 'Content-Type': 'text/plain' });
