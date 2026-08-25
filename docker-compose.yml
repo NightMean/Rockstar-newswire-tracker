@@ -15,6 +15,8 @@ services:
       - PUPPETEER_SKIP_DOWNLOAD=true
       - PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
       - TZ=${TZ:-UTC}
+      # Log verbosity: debug | info | warn | error (default: info)
+      # - LOG_LEVEL=info
       # Optional: Override the webhook URL from config.yaml.
       # If not set here, it uses the value from ./config/config.yaml
       # - DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...

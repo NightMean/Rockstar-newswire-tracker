@@ -65,7 +65,10 @@ Ensure you have [Node.js](https://nodejs.org/) installed.
 npm install
 
 # Start the application
-node index.js
+npm start
+
+# Run tests
+npm test
 ```
 
 ## Configuration file (`config.yaml`)

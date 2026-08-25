@@ -40,6 +40,7 @@ const {
 const fs = require('fs');
 const path = require('path');
 const { escapeHtml, formatDate, DEFAULT_DISCORD_AVATAR_URL } = require('./utils');
+const log = require('./logger');
 const newsDir = path.join(__dirname, '../config/newswire_articles.json');
 const mainLink = 'https://graph.rockstargames.com?';
 const REQUEST_TIMEOUT_MS = 30000;
@@ -64,15 +65,15 @@ const articlesLoaded = new Promise((resolve, reject) => {
             if (err.code === 'ENOENT') {
                 articles = {};
             } else {
-                console.error('[ERROR] Failed to read articles file:', err);
+                log.error('[ERROR] Failed to read articles file:', err);
                 articles = {};
             }
         } else {
             try {
                 articles = jsonString ? JSON.parse(jsonString) : {};
             } catch (e) {
-                console.error('[ERROR] Failed to parse articles JSON (First 50 chars):', jsonString.substring(0, 50));
-                console.error('[ERROR] Parse error:', e);
+                log.error('[ERROR] Failed to parse articles JSON (First 50 chars):', jsonString.substring(0, 50));
+                log.error('[ERROR] Parse error:', e);
                 articles = {};
             }
         }
@@ -105,9 +106,9 @@ class newswire {
         // Ensure data is loaded before starting
         await articlesLoaded;
 
-        // console.log('[READY] Started news feed for ' + this.genre + '. Feed refreshes every ' + (this.refreshInterval / 60000) + ' minutes.');
-        // console.log('[INIT] Fetching API Token (this may take a minute)...'); // Moved to getHashToken
-        console.log('[READY] Started news feed for ' + this.genre + '.');
+        // log.info('[READY] Started news feed for ' + this.genre + '. Feed refreshes every ' + (this.refreshInterval / 60000) + ' minutes.');
+        // log.info('[INIT] Fetching API Token (this may take a minute)...'); // Moved to getHashToken
+        log.info('[READY] Started news feed for ' + this.genre + '.');
         newsHash = await getHashToken();
 
         if (this.enableRSS) {
@@ -123,12 +124,12 @@ class newswire {
             // Skip a tick if the previous refresh is still running (e.g. slow
             // article fetches) so ticks never overlap and double-send.
             if (this.isRefreshing) {
-                console.log(`[REFRESH] Previous refresh for ${this.genre} still in progress, skipping tick.`);
+                log.info(`[REFRESH] Previous refresh for ${this.genre} still in progress, skipping tick.`);
                 return;
             }
             this.isRefreshing = true;
             try {
-                console.log('[REFRESH] Refreshing news feed for ' + this.genre);
+                log.info('[REFRESH] Refreshing news feed for ' + this.genre);
 
                 if (this.enableRSS) {
                     const items = await this.updateRSS();
@@ -145,7 +146,7 @@ class newswire {
 
     async sendArticle(article) {
         if (!this.webhook) return true;
-        console.log(`[NEW] ${this.genre}: ${article.title} (${article.link})`);
+        log.info(`[NEW] ${this.genre}: ${article.title} (${article.link})`);
 
         const dateStr = formatDate(article.date, this.dateFormat);
         const tagsJoined = Array.isArray(article.tags) ? article.tags.join(', ') : '';
@@ -178,7 +179,7 @@ class newswire {
             const delivered = await this.deliverWebhook(payload);
             if (delivered) return true;
             if (attempt < DISCORD_SEND_RETRIES) {
-                console.error(`[ERROR] Discord delivery failed (attempt ${attempt}/${DISCORD_SEND_RETRIES}) for "${article.title}", retrying in ${DISCORD_RETRY_DELAY_MS}ms`);
+                log.error(`[ERROR] Discord delivery failed (attempt ${attempt}/${DISCORD_SEND_RETRIES}) for "${article.title}", retrying in ${DISCORD_RETRY_DELAY_MS}ms`);
                 await new Promise(r => setTimeout(r, DISCORD_RETRY_DELAY_MS));
             }
         }
@@ -190,9 +191,9 @@ class newswire {
             const req = request(this.webhook, requestOptions, (res) => {
                 const ok = res.statusCode >= 200 && res.statusCode <= 299;
                 if (!ok) {
-                    console.error('[ERROR] Unable to process request: ' + res.statusCode + '\nReason: ' + res.statusMessage);
+                    log.error('[ERROR] Unable to process request: ' + res.statusCode + '\nReason: ' + res.statusMessage);
                 } else {
-                    console.log('[DISCORD] Notification sent successfully.');
+                    log.info('[DISCORD] Notification sent successfully.');
                 }
                 // Vital: Consume response data to free up memory and prevent timeout
                 res.resume();
@@ -203,7 +204,7 @@ class newswire {
                 req.destroy(new Error('Request timedout'));
             });
             req.on('error', (err) => {
-                console.error('[ERROR] Discord webhook request failed:', err.message);
+                log.error('[ERROR] Discord webhook request failed:', err.message);
                 resolve(false);
             });
 
@@ -214,7 +215,7 @@ class newswire {
 
     async processNewArticles(newArticles) {
         if (!newArticles || newArticles.length === 0) {
-            console.log(`[CHECK] No new articles found for ${this.genre}`);
+            log.info(`[CHECK] No new articles found for ${this.genre}`);
             return;
         }
 
@@ -227,20 +228,20 @@ class newswire {
                 // send is retried on the next refresh instead of being lost.
                 addArticle(article.id.toString(), article.link);
             } else {
-                console.error(`[ERROR] Failed to deliver article ${article.id} after ${DISCORD_SEND_RETRIES} attempts; will retry next refresh.`);
+                log.error(`[ERROR] Failed to deliver article ${article.id} after ${DISCORD_SEND_RETRIES} attempts; will retry next refresh.`);
             }
             await new Promise(r => setTimeout(r, RATE_LIMIT_DELAY_MS)); // Rate limit between sends
         }
     }
 
     async getNewArticles() {
-        console.log(`[CHECK] Checking for new articles in ${this.genre} (Limit: ${this.checkLimit})`);
+        log.info(`[CHECK] Checking for new articles in ${this.genre} (Limit: ${this.checkLimit})`);
         return this.processRequest().then(async (res) => {
             if (res && res.errors != null) {
                 if (res.data == null && res.errors[0].message == 'PersistedQueryNotFound') {
-                    console.log('[HASH] Token has expired, generating new one.');
-                    newsHash = await getHashToken().catch(console.log);
-                    res = await this.processRequest().catch(console.log);
+                    log.info('[HASH] Token has expired, generating new one.');
+                    newsHash = await getHashToken().catch(log.error);
+                    res = await this.processRequest().catch(log.error);
                 } else {
                     return [];
                 }
@@ -270,7 +271,7 @@ class newswire {
                             subtitle = fullDetails.tina.payload.meta.subtitle || "";
                         }
                     } catch (err) {
-                        console.error('[ERROR] Failed to fetch article details for subtitle:', err);
+                        log.error('[ERROR] Failed to fetch article details for subtitle:', err);
                     }
 
                     foundNewArticles.push({
@@ -288,26 +289,26 @@ class newswire {
             return foundNewArticles;
 
         }).catch(e => {
-            console.log(e);
+            log.info(e);
             return [];
         });
     }
 
     async updateRSS() {
-        // console.log('[RSS] Updating RSS feed...'); // Redundant with index.js log
+        // log.info('[RSS] Updating RSS feed...'); // Redundant with index.js log
         try {
-            let res = await this.processRequest().catch(console.log);
+            let res = await this.processRequest().catch(log.error);
 
             if (res && res.errors != null) {
                 if (res.data == null && res.errors[0].message == 'PersistedQueryNotFound') {
-                    console.log('[RSS] Token has expired, generating new one.');
-                    newsHash = await getHashToken().catch(console.log);
-                    res = await this.processRequest().catch(console.log);
+                    log.info('[RSS] Token has expired, generating new one.');
+                    newsHash = await getHashToken().catch(log.error);
+                    res = await this.processRequest().catch(log.error);
                 }
             }
 
             if (!res || !res.data || !res.data.posts) {
-                console.log('[RSS] No data received.');
+                log.info('[RSS] No data received.');
                 return;
             }
 
@@ -330,7 +331,7 @@ class newswire {
                         content = this.parseContent(fullArticle);
                     }
                 } catch (e) {
-                    console.error(`[RSS] Failed to fetch content for ${post.id}:`, e.message);
+                    log.error(`[RSS] Failed to fetch content for ${post.id}:`, e.message);
                 }
 
                 feedItems.push({
@@ -355,7 +356,7 @@ class newswire {
             return feedItems;
 
         } catch (e) {
-            console.error('[RSS] Failed to fetch/parse feed data:', e);
+            log.error('[RSS] Failed to fetch/parse feed data:', e);
             return [];
         }
     }
@@ -577,7 +578,7 @@ class newswire {
 function addArticle(article, url) {
     if (!articles) return;
     if (articles[article]) {
-        console.log('Article ID: ' + article + ' already exists in database.');
+        log.info('Article ID: ' + article + ' already exists in database.');
         return;
     }
 
@@ -589,14 +590,14 @@ function addArticle(article, url) {
         fs.writeFileSync(tmpPath, JSON.stringify(articles, null, 2));
         fs.renameSync(tmpPath, newsDir);
     } catch (err) {
-        console.error('[ERROR] Failed to save articles to db:', err);
+        log.error('[ERROR] Failed to save articles to db:', err);
     }
 }
 
 let tokenPromise = null;
 function getHashToken() {
     if (tokenPromise) return tokenPromise;
-    console.log('[INIT] Fetching API Token (this may take a minute)...');
+    log.info('[INIT] Fetching API Token (this may take a minute)...');
     tokenPromise = fetchHashToken();
     // Allow a retry on the next call if this attempt failed
     tokenPromise.catch(() => { tokenPromise = null; });

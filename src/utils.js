@@ -1,5 +1,6 @@
 // Shared pure helpers. Kept free of network/browser/file dependencies so
 // they can be unit-tested without loading the newswire module.
+const log = require('./logger');
 
 const DEFAULT_DISCORD_AVATAR_URL = "https://yt3.googleusercontent.com/-jCZaDR8AoEgC6CBPWFubF2PMSOTGU3nJ4VOSo7aq3W6mR8tcRCgygd8fS-4Ra41oHPo3F3P=s900-c-k-c0x00ffffff-no-rj";
 
@@ -24,7 +25,7 @@ function formatDate(date, format) {
 
     if (format === 'MM/DD/YYYY') return `${month}/${day}/${year}`;
     if (format === 'DD/MM/YYYY') return `${day}/${month}/${year}`;
-    console.error(`[ERROR] Unsupported dateFormat "${format}", falling back to DD/MM/YYYY`);
+    log.error(`[ERROR] Unsupported dateFormat "${format}", falling back to DD/MM/YYYY`);
     return `${day}/${month}/${year}`;
 }
 

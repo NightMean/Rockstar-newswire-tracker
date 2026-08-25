@@ -4,6 +4,7 @@ const path = require('path');
 const yaml = require('js-yaml');
 const { newswire } = require('./src/newswire');
 const { sanitizeFeedFilename, isValidDiscordWebhookUrl, DEFAULT_DISCORD_AVATAR_URL } = require('./src/utils');
+const log = require('./src/logger');
 
 // Feed output directory, created on startup so fresh installs can write feeds
 const FEEDS_DIR = path.join(__dirname, 'feeds');
@@ -15,7 +16,7 @@ try {
     const fileContents = fs.readFileSync('./config/config.yaml', 'utf8');
     config = yaml.load(fileContents);
 } catch (e) {
-    console.error('[ERROR] Failed to load config.yaml:', e);
+    log.error('[ERROR] Failed to load config.yaml:', e);
     process.exit(1);
 }
 
@@ -26,12 +27,12 @@ if (process.env.DISCORD_WEBHOOK_URL) {
 
 // Validate Webhook for Discord
 if (config.enableDiscord && (!config.webhookUrl || config.webhookUrl === 'YOUR_WEBHOOK_URL_HERE')) {
-    console.error('[ERROR] Discord is enabled but Webhook URL is not configured. Please check config.yaml or set DISCORD_WEBHOOK_URL env variable.');
+    log.error('[ERROR] Discord is enabled but Webhook URL is not configured. Please check config.yaml or set DISCORD_WEBHOOK_URL env variable.');
     process.exit(1);
 }
 // A mistyped webhook URL would silently post article data to an arbitrary host
 if (config.enableDiscord && !isValidDiscordWebhookUrl(config.webhookUrl)) {
-    console.error('[ERROR] webhookUrl does not look like a Discord webhook URL (expected https://discord.com/api/webhooks/...). Got: ' + config.webhookUrl);
+    log.error('[ERROR] webhookUrl does not look like a Discord webhook URL (expected https://discord.com/api/webhooks/...). Got: ' + config.webhookUrl);
     process.exit(1);
 }
 
@@ -44,7 +45,7 @@ const MERGE_FEEDS = config.mergeFeeds !== false;
 // the polling interval would be degenerate (e.g. setInterval(..., 0) hot-loop).
 const refreshIntervalMinutes = Number(config.refreshInterval);
 if (!Number.isFinite(refreshIntervalMinutes) || refreshIntervalMinutes <= 0) {
-    console.error('[ERROR] config.refreshInterval must be a positive number of minutes, got: ' + JSON.stringify(config.refreshInterval));
+    log.error('[ERROR] config.refreshInterval must be a positive number of minutes, got: ' + JSON.stringify(config.refreshInterval));
     process.exit(1);
 }
 
@@ -52,7 +53,7 @@ if (!Number.isFinite(refreshIntervalMinutes) || refreshIntervalMinutes <= 0) {
 const DATE_FORMATS = ['DD/MM/YYYY', 'MM/DD/YYYY'];
 let dateFormat = config.dateFormat || 'DD/MM/YYYY';
 if (!DATE_FORMATS.includes(dateFormat)) {
-    console.error(`[ERROR] Unsupported dateFormat "${dateFormat}", using "DD/MM/YYYY". Supported: ${DATE_FORMATS.join(', ')}`);
+    log.error(`[ERROR] Unsupported dateFormat "${dateFormat}", using "DD/MM/YYYY". Supported: ${DATE_FORMATS.join(', ')}`);
     dateFormat = 'DD/MM/YYYY';
 }
 
@@ -61,10 +62,10 @@ const allArticles = {};
 
 // Start Newswire Instances
 const packageJson = require('./package.json');
-console.log(`[INIT] Starting Rockstar Newswire Tracker v${packageJson.version}`);
-console.log(`[INIT] Enabled Genres: ${genres.join(', ')}`);
-console.log(`[INIT] Services: Discord=${config.enableDiscord}, RSS=${config.enableRSS}`);
-console.log(`[INIT] RSS Mode: ${MERGE_FEEDS ? 'Merged (feed.xml)' : 'Separate (feed-[genre].xml)'}`);
+log.info(`[INIT] Starting Rockstar Newswire Tracker v${packageJson.version}`);
+log.info(`[INIT] Enabled Genres: ${genres.join(', ')}`);
+log.info(`[INIT] Services: Discord=${config.enableDiscord}, RSS=${config.enableRSS}`);
+log.info(`[INIT] RSS Mode: ${MERGE_FEEDS ? 'Merged (feed.xml)' : 'Separate (feed-[genre].xml)'}`);
 
 genres.forEach(genre => {
     // We pass the config options to the class
@@ -77,7 +78,7 @@ genres.forEach(genre => {
         dateFormat: dateFormat,
         checkLimit: Math.max(1, config.checkLimit || 5), // Default 5, Min 1
         onRSSUpdate: (items) => {
-            console.log(`[RSS] Received ${items.length} articles for ${genre}`);
+            log.info(`[RSS] Received ${items.length} articles for ${genre}`);
             allArticles[genre] = items;
             generateRSS();
         }
@@ -100,9 +101,9 @@ async function generateRSS() {
 
         try {
             fs.writeFileSync(path.join(FEEDS_DIR, 'feed.xml'), feed.rss2());
-            // console.log('[RSS] Merged feed.xml updated.');
+            // log.info('[RSS] Merged feed.xml updated.');
         } catch (e) {
-            console.error('[RSS] Failed to write feed.xml:', e);
+            log.error('[RSS] Failed to write feed.xml:', e);
         }
 
     } else {
@@ -118,9 +119,9 @@ async function generateRSS() {
 
             try {
                 fs.writeFileSync(path.join(FEEDS_DIR, filename), feed.rss2());
-                // console.log(`[RSS] ${filename} updated.`);
+                // log.info(`[RSS] ${filename} updated.`);
             } catch (e) {
-                console.error(`[RSS] Failed to write ${filename}:`, e);
+                log.error(`[RSS] Failed to write ${filename}:`, e);
             }
         }
     }
@@ -149,7 +150,7 @@ async function createFeedObject(title, description, linkPath) {
 // Start RSS Server if enabled
 if (config.enableRSS) {
     const server = http.createServer((req, res) => {
-        console.log(`[SERVER] Request: ${req.method} ${req.url}`);
+        log.info(`[SERVER] Request: ${req.method} ${req.url}`);
 
         // Routing
         let targetFile = null;
@@ -183,7 +184,7 @@ if (config.enableRSS) {
                     } else {
                         res.writeHead(500, { 'Content-Type': 'text/plain' });
                         res.end('Internal Server Error');
-                        console.error('[SERVER] Error reading feed file:', err);
+                        log.error('[SERVER] Error reading feed file:', err);
                     }
                 } else {
                     res.writeHead(200, { 'Content-Type': 'application/rss+xml' });
@@ -198,17 +199,17 @@ if (config.enableRSS) {
 
     server.listen(PORT, () => {
         if (MERGE_FEEDS) {
-            console.log(`[SERVER] RSS Feed running at http://localhost:${PORT}/feed.xml`);
+            log.info(`[SERVER] RSS Feed running at http://localhost:${PORT}/feed.xml`);
         } else {
-            console.log(`[SERVER] RSS Feeds available at:`);
-            console.log(`http://localhost:${PORT}/`); // Index page
+            log.info(`[SERVER] RSS Feeds available at:`);
+            log.info(`http://localhost:${PORT}/`); // Index page
             genres.forEach(g => {
-                console.log(`http://localhost:${PORT}/feed-${g.replace(/_/g, '-')}.xml`);
+                log.info(`http://localhost:${PORT}/feed-${g.replace(/_/g, '-')}.xml`);
             });
         }
     });
 } else {
     // If RSS is disabled, we might still want to keep the process alive if Discord is enabled
     // The newswire class uses setInterval, so the process will stay alive unless crashed/stopped.
-    console.log('[SERVER] RSS Server is disabled in config.');
+    log.info('[SERVER] RSS Server is disabled in config.');
 }
