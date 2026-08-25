@@ -52,6 +52,7 @@ const DISCORD_SEND_RETRIES = 3;
 const DISCORD_RETRY_DELAY_MS = 2000;
 const TOKEN_FETCH_ATTEMPTS = 3;
 const TOKEN_RETRY_DELAY_MS = 5000;
+const PERSISTED_QUERY_NOT_FOUND = 'PersistedQueryNotFound';
 const requestOptions = {
     method: 'POST',
     headers: {
@@ -242,18 +243,37 @@ class newswire {
         }
     }
 
+    // Performs the list request, refreshing the rotating hash once if Rockstar
+    // reports the persisted query as unknown. Resolves to the response object,
+    // or null if the request ultimately failed.
+    async requestListWithTokenRefresh() {
+        let res = await this.processRequest().catch(e => {
+            log.error(`[ERROR] Newswire list request failed for ${this.genre}:`, e.message);
+            return null;
+        });
+
+        const hashExpired = res && res.errors != null && res.data == null
+            && res.errors[0]?.message === PERSISTED_QUERY_NOT_FOUND;
+        if (!hashExpired) return res;
+
+        log.info('[HASH] Token has expired, generating new one.');
+        try {
+            newsHash = await acquireHashWithRetries();
+        } catch (e) {
+            log.error('[ERROR] Token refresh failed:', e.message);
+            return null;
+        }
+        return this.processRequest().catch(e => {
+            log.error(`[ERROR] Newswire list request failed after token refresh for ${this.genre}:`, e.message);
+            return null;
+        });
+    }
+
     async getNewArticles() {
         log.info(`[CHECK] Checking for new articles in ${this.genre} (Limit: ${this.checkLimit})`);
-        return this.processRequest().then(async (res) => {
-            if (res && res.errors != null) {
-                if (res.data == null && res.errors[0].message == 'PersistedQueryNotFound') {
-                    log.info('[HASH] Token has expired, generating new one.');
-                    newsHash = await getHashToken().catch(log.error);
-                    res = await this.processRequest().catch(log.error);
-                } else {
-                    return [];
-                }
-            }
+        try {
+            const res = await this.requestListWithTokenRefresh();
+            if (!res || !res.data || !res.data.posts) return [];
 
             const results = res.data.posts.results;
             if (!results || results.length === 0) return [];
@@ -296,24 +316,15 @@ class newswire {
 
             return foundNewArticles;
 
-        }).catch(e => {
-            log.info(e);
+        } catch (e) {
+            log.error(`[ERROR] Failed to check for new articles in ${this.genre}:`, e);
             return [];
-        });
+        }
     }
 
     async updateRSS() {
-        // log.info('[RSS] Updating RSS feed...'); // Redundant with index.js log
         try {
-            let res = await this.processRequest().catch(log.error);
-
-            if (res && res.errors != null) {
-                if (res.data == null && res.errors[0].message == 'PersistedQueryNotFound') {
-                    log.info('[RSS] Token has expired, generating new one.');
-                    newsHash = await getHashToken().catch(log.error);
-                    res = await this.processRequest().catch(log.error);
-                }
-            }
+            const res = await this.requestListWithTokenRefresh();
 
             if (!res || !res.data || !res.data.posts) {
                 log.info('[RSS] No data received.');
