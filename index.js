@@ -3,6 +3,7 @@ const http = require('http');
 const path = require('path');
 const yaml = require('js-yaml');
 const { newswire } = require('./src/newswire');
+const { sanitizeFeedFilename, isValidDiscordWebhookUrl } = require('./src/utils');
 
 // Feed output directory, created on startup so fresh installs can write feeds
 const FEEDS_DIR = path.join(__dirname, 'feeds');
@@ -26,6 +27,11 @@ if (process.env.DISCORD_WEBHOOK_URL) {
 // Validate Webhook for Discord
 if (config.enableDiscord && (!config.webhookUrl || config.webhookUrl === 'YOUR_WEBHOOK_URL_HERE')) {
     console.error('[ERROR] Discord is enabled but Webhook URL is not configured. Please check config.yaml or set DISCORD_WEBHOOK_URL env variable.');
+    process.exit(1);
+}
+// A mistyped webhook URL would silently post article data to an arbitrary host
+if (config.enableDiscord && !isValidDiscordWebhookUrl(config.webhookUrl)) {
+    console.error('[ERROR] webhookUrl does not look like a Discord webhook URL (expected https://discord.com/api/webhooks/...). Got: ' + config.webhookUrl);
     process.exit(1);
 }
 
@@ -152,9 +158,9 @@ if (config.enableRSS) {
                 targetFile = 'feed.xml';
             }
         } else {
-            // Try to match /feed-[genre].xml
+            // Try to match /feed-[genre].xml; sanitize against path traversal
             if (req.url.startsWith('/feed-') && req.url.endsWith('.xml')) {
-                targetFile = req.url.substring(1); // remove leading /
+                targetFile = sanitizeFeedFilename(req.url);
             } else if (req.url === '/' || req.url === '/rss') {
                 // Index listing? Or just 404? 
                 // Let's list rockstar newswire available feeds

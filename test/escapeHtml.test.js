@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { escapeHtml } = require('../src/newswire');
+const { escapeHtml } = require('../src/utils');
 
 test('escapeHtml escapes all HTML-special characters', () => {
     assert.strictEqual(

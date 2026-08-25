@@ -39,6 +39,7 @@ const {
 } = require('https');
 const fs = require('fs');
 const path = require('path');
+const { escapeHtml, formatDate } = require('./utils');
 const newsDir = path.join(__dirname, '../config/newswire_articles.json');
 const mainLink = 'https://graph.rockstargames.com?';
 const REQUEST_TIMEOUT_MS = 30000;
@@ -573,30 +574,6 @@ class newswire {
     }
 }
 
-// Formats a date for the Discord embed footer. Supported formats:
-// "DD/MM/YYYY" (default) and "MM/DD/YYYY". Falls back to ISO on invalid dates.
-function formatDate(date, format) {
-    const dateObj = new Date(date);
-    if (isNaN(dateObj.getTime())) return String(date);
-
-    const day = String(dateObj.getDate()).padStart(2, '0');
-    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-    const year = dateObj.getFullYear();
-
-    if (format === 'MM/DD/YYYY') return `${month}/${day}/${year}`;
-    if (format === 'DD/MM/YYYY') return `${day}/${month}/${year}`;
-    console.error(`[ERROR] Unsupported dateFormat "${format}", falling back to DD/MM/YYYY`);
-    return `${day}/${month}/${year}`;
-}
-
-function escapeHtml(value) {    return String(value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-}
-
 function addArticle(article, url) {
     if (!articles) return;
     if (articles[article]) {
@@ -671,7 +648,5 @@ async function fetchHashToken() {
 
 module.exports = {
     newswire,
-    getHashToken,
-    escapeHtml,
-    formatDate
+    getHashToken
 };

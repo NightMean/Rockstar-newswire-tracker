@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { formatDate } = require('../src/newswire');
+const { formatDate } = require('../src/utils');
 
 // Fixed date to avoid timezone flakiness: 2024-03-05T12:00:00Z, local-safe parts
 const d = new Date(2024, 2, 5); // 5 March 2024, local time
