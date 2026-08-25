@@ -45,6 +45,9 @@ const REQUEST_TIMEOUT_MS = 30000;
 const PAGE_LOAD_TIMEOUT_MS = 60000;
 const TOKEN_WAIT_TIMEOUT_MS = 90000;
 const DEFAULT_REFRESH_INTERVAL_MS = 7.2e+6; // 2 hours in milliseconds
+const RATE_LIMIT_DELAY_MS = 1000;
+const DISCORD_SEND_RETRIES = 3;
+const DISCORD_RETRY_DELAY_MS = 2000;
 const requestOptions = {
     method: 'POST',
     headers: {
@@ -110,13 +113,7 @@ class newswire {
         }
 
         let newArticles = await this.getNewArticles();
-        if (newArticles && newArticles.length > 0) {
-            newArticles.reverse(); // Send oldest first
-            for (const article of newArticles) {
-                this.sendArticle(article);
-                await new Promise(r => setTimeout(r, 1000)); // Rate limit 1s
-            }
-        }
+        await this.processNewArticles(newArticles);
 
         this.isRefreshing = false;
         setInterval(async _ => {
@@ -136,43 +133,19 @@ class newswire {
                 }
 
                 newArticles = await this.getNewArticles();
-                if (newArticles && newArticles.length > 0) {
-                    newArticles.reverse(); // Send oldest first
-                    for (const article of newArticles) {
-                        this.sendArticle(article);
-                        await new Promise(r => setTimeout(r, 1000)); // Rate limit 1s
-                    }
-                } else {
-                    console.log(`[CHECK] No new articles found for ${this.genre}`);
-                }
+                await this.processNewArticles(newArticles);
             } finally {
                 this.isRefreshing = false;
             }
         }, this.refreshInterval);
     }
 
-    sendArticle(article) {
-        if (!this.webhook) return;
+    async sendArticle(article) {
+        if (!this.webhook) return true;
         console.log(`[NEW] ${this.genre}: ${article.title} (${article.link})`);
 
-        let dateStr = article.date;
-        try {
-            const dateObj = new Date(article.date);
-            const day = String(dateObj.getDate()).padStart(2, '0');
-            const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-            const year = dateObj.getFullYear();
-
-            if (this.dateFormat === 'MM/DD/YYYY') {
-                dateStr = `${month}/${day}/${year}`;
-            } else {
-                // Default to DD/MM/YYYY
-                dateStr = `${day}/${month}/${year}`;
-            }
-        } catch (e) {
-            console.error('[ERROR] Failed to format date:', e);
-        }
-
-        article.tags = article.tags.join(', ');
+        const dateStr = formatDate(article.date, this.dateFormat);
+        const tagsJoined = Array.isArray(article.tags) ? article.tags.join(', ') : '';
 
         // Construct Webhook Payload with custom username/avatar and embed
         const payload = {
@@ -193,31 +166,68 @@ class newswire {
                     'url': article.img
                 },
                 'footer': {
-                    "text": article.tags + ' • ' + dateStr
+                    "text": tagsJoined + ' • ' + dateStr
                 }
             }]
         };
 
-        const req = request(this.webhook, requestOptions, (res) => {
-            if (res.statusCode < 200 || res.statusCode > 299) {
-                console.error('[ERROR] Unable to process request: ' + res.statusCode + '\nReason: ' + res.statusMessage);
-            } else {
-                console.log('[DISCORD] Notification sent successfully.');
+        for (let attempt = 1; attempt <= DISCORD_SEND_RETRIES; attempt++) {
+            const delivered = await this.deliverWebhook(payload);
+            if (delivered) return true;
+            if (attempt < DISCORD_SEND_RETRIES) {
+                console.error(`[ERROR] Discord delivery failed (attempt ${attempt}/${DISCORD_SEND_RETRIES}) for "${article.title}", retrying in ${DISCORD_RETRY_DELAY_MS}ms`);
+                await new Promise(r => setTimeout(r, DISCORD_RETRY_DELAY_MS));
             }
-            // Vital: Consume response data to free up memory and prevent timeout
-            res.resume();
+        }
+        return false;
+    }
+
+    deliverWebhook(payload) {
+        return new Promise((resolve) => {
+            const req = request(this.webhook, requestOptions, (res) => {
+                const ok = res.statusCode >= 200 && res.statusCode <= 299;
+                if (!ok) {
+                    console.error('[ERROR] Unable to process request: ' + res.statusCode + '\nReason: ' + res.statusMessage);
+                } else {
+                    console.log('[DISCORD] Notification sent successfully.');
+                }
+                // Vital: Consume response data to free up memory and prevent timeout
+                res.resume();
+                resolve(ok);
+            });
+            req.on('timeout', () => {
+                // Destroying the socket emits 'error' below, which resolves(false)
+                req.destroy(new Error('Request timedout'));
+            });
+            req.on('error', (err) => {
+                console.error('[ERROR] Discord webhook request failed:', err.message);
+                resolve(false);
+            });
+
+            req.write(JSON.stringify(payload));
+            req.end();
         });
-        req.on('error', (err) => {
-            console.error(err);
-        })
+    }
 
-        req.on('timeout', () => {
-            req.destroy()
-            console.error('[ERROR] Request timedout');
-        })
+    async processNewArticles(newArticles) {
+        if (!newArticles || newArticles.length === 0) {
+            console.log(`[CHECK] No new articles found for ${this.genre}`);
+            return;
+        }
 
-        req.write(JSON.stringify(payload));
-        req.end();
+        newArticles.reverse(); // Send oldest first
+        for (const article of newArticles) {
+            const delivered = await this.sendArticle(article);
+
+            if (delivered) {
+                // Persist as seen only after a successful delivery so a failed
+                // send is retried on the next refresh instead of being lost.
+                addArticle(article.id.toString(), article.link);
+            } else {
+                console.error(`[ERROR] Failed to deliver article ${article.id} after ${DISCORD_SEND_RETRIES} attempts; will retry next refresh.`);
+            }
+            await new Promise(r => setTimeout(r, RATE_LIMIT_DELAY_MS)); // Rate limit between sends
+        }
     }
 
     async getNewArticles() {
@@ -246,9 +256,10 @@ class newswire {
 
                 if (!check) {
                     // Found a new one!
-                    let tags = [];
+                    // Note: NOT marked as seen here — the article is persisted
+                    // only after its Discord delivery succeeds in processNewArticles.
+                    const tags = (article.primary_tags || []).map(tag => tag.name);
                     article.url = 'https://www.rockstargames.com' + article.url;
-                    await article.primary_tags.map(tag => tags.push(tag.name))
                     let subtitle = "";
                     try {
                         const fullDetails = await this.getArticle(article.id);
@@ -259,10 +270,8 @@ class newswire {
                         console.error('[ERROR] Failed to fetch article details for subtitle:', err);
                     }
 
-                    // Mark as seen immediately so we don't re-process in next loop if user CTRL+C
-                    addArticle(article.id.toString(), article.url);
-
                     foundNewArticles.push({
+                        id: article.id,
                         title: article.title,
                         link: article.url,
                         img: article['preview_images_parsed']['newswire_block']['d16x9'],
@@ -562,8 +571,23 @@ class newswire {
     }
 }
 
-function escapeHtml(value) {
-    return String(value)
+// Formats a date for the Discord embed footer. Supported formats:
+// "DD/MM/YYYY" (default) and "MM/DD/YYYY". Falls back to ISO on invalid dates.
+function formatDate(date, format) {
+    const dateObj = new Date(date);
+    if (isNaN(dateObj.getTime())) return String(date);
+
+    const day = String(dateObj.getDate()).padStart(2, '0');
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const year = dateObj.getFullYear();
+
+    if (format === 'MM/DD/YYYY') return `${month}/${day}/${year}`;
+    if (format === 'DD/MM/YYYY') return `${day}/${month}/${year}`;
+    console.error(`[ERROR] Unsupported dateFormat "${format}", falling back to DD/MM/YYYY`);
+    return `${day}/${month}/${year}`;
+}
+
+function escapeHtml(value) {    return String(value)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
@@ -642,5 +666,6 @@ async function fetchHashToken() {
 module.exports = {
     newswire,
     getHashToken,
-    escapeHtml
+    escapeHtml,
+    formatDate
 };
