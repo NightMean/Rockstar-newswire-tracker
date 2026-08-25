@@ -34,6 +34,22 @@ const PORT = process.env.PORT || 3000;
 // Default to merged if not specified
 const MERGE_FEEDS = config.mergeFeeds !== false;
 
+// Validate refresh interval: must be a positive number of minutes, otherwise
+// the polling interval would be degenerate (e.g. setInterval(..., 0) hot-loop).
+const refreshIntervalMinutes = Number(config.refreshInterval);
+if (!Number.isFinite(refreshIntervalMinutes) || refreshIntervalMinutes <= 0) {
+    console.error('[ERROR] config.refreshInterval must be a positive number of minutes, got: ' + JSON.stringify(config.refreshInterval));
+    process.exit(1);
+}
+
+// Validate date format against the supported set (loud default, see formatDate)
+const DATE_FORMATS = ['DD/MM/YYYY', 'MM/DD/YYYY'];
+let dateFormat = config.dateFormat || 'DD/MM/YYYY';
+if (!DATE_FORMATS.includes(dateFormat)) {
+    console.error(`[ERROR] Unsupported dateFormat "${dateFormat}", using "DD/MM/YYYY". Supported: ${DATE_FORMATS.join(', ')}`);
+    dateFormat = 'DD/MM/YYYY';
+}
+
 // Store articles for each genre: { genreName: [items] }
 const allArticles = {};
 
@@ -49,10 +65,10 @@ genres.forEach(genre => {
     new newswire(genre, {
         webhookUrl: config.enableDiscord ? config.webhookUrl : null,
         enableRSS: config.enableRSS,
-        refreshInterval: (config.refreshInterval || 120) * 60 * 1000, // Convert minutes to ms
+        refreshInterval: refreshIntervalMinutes * 60 * 1000, // Convert minutes to ms
         discordProfileName: config.discordProfileName || "Rockstar Newswire Tracker",
         discordAvatarUrl: config.discordAvatarUrl || "https://yt3.googleusercontent.com/-jCZaDR8AoEgC6CBPWFubF2PMSOTGU3nJ4VOSo7aq3W6mR8tcRCgygd8fS-4Ra41oHPo3F3P=s900-c-k-c0x00ffffff-no-rj",
-        dateFormat: config.dateFormat || "DD/MM/YYYY",
+        dateFormat: dateFormat,
         checkLimit: Math.max(1, config.checkLimit || 5), // Default 5, Min 1
         onRSSUpdate: (items) => {
             console.log(`[RSS] Received ${items.length} articles for ${genre}`);

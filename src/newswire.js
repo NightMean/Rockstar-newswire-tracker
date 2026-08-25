@@ -81,7 +81,9 @@ const articlesLoaded = new Promise((resolve, reject) => {
 
 class newswire {
     constructor(genre, options) {
-        if (typeof genres[genre] == 'undefined') return console.log('Invalid genre. Available genres:' + Object.keys(genres).map(gen => ' ' + gen));
+        if (typeof genres[genre] == 'undefined') {
+            throw new Error('Invalid genre "' + genre + '". Available genres: ' + Object.keys(genres).join(', '));
+        }
         this.genre = genre;
         this.genreID = genres[genre];
         this.webhook = options.webhookUrl;
@@ -274,7 +276,7 @@ class newswire {
                         id: article.id,
                         title: article.title,
                         link: article.url,
-                        img: article['preview_images_parsed']['newswire_block']['d16x9'],
+                        img: article.preview_images_parsed?.newswire_block?.d16x9 || "",
                         date: article.created,
                         tags: tags,
                         subtitle: subtitle
