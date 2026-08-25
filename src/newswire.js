@@ -1,38 +1,36 @@
 const genres = {
     latest: null,
-    announcements: 722,
-    content_updates: 705,
-    backward_compatibility: 735,
-    rockstar_launcher: 739,
-    fan_videos: 706,
-    livestream: 711,
-    in_memoriam: 730,
-    twitch: 712,
-    warehouse: 191,
-    contest: 161,
-    crews: 621,
-    crews_recruiting: 725,
-    gameplay_clips: 727,
     events: 13,
-    crews: 621,
-    music: 30,
-    rockstar: 43,
-    sales: 661,
-    game_tips: 121,
     max_payne: 25,
     max_payne_3: 27,
+    music: 30,
+    red_dead_redemption: 40,
+    rockstar: 43,
+    la_noire: 86,
+    game_tips: 121,
+    contest: 161,
+    warehouse: 191,
+    grand_theft_auto_v: 591,
+    crews: 621,
+    sales: 661,
     grand_theft_auto_vi: 666,
     gta_online: 702,
-    grand_theft_auto_v: 591,
-    grand_theft_auto_the_trilogy: 751,
+    content_updates: 705,
     updates: 705,
     fan_videos: 706,
     fan_art: 708,
-    creator_jobs: 728,
-    red_dead_online: 736,
+    livestream: 711,
+    twitch: 712,
     red_dead_redemption_2: 716,
-    red_dead_redemption: 40,
-    la_noire: 86,
+    announcements: 722,
+    crews_recruiting: 725,
+    gameplay_clips: 727,
+    creator_jobs: 728,
+    in_memoriam: 730,
+    backward_compatibility: 735,
+    red_dead_online: 736,
+    rockstar_launcher: 739,
+    grand_theft_auto_the_trilogy: 751,
     circoloco_records: 1005,
 };
 const puppeteer = require('puppeteer');
@@ -40,11 +38,9 @@ const {
     request
 } = require('https');
 const fs = require('fs');
-// const { Feed } = require('feed'); // Replaced with dynamic import
 const path = require('path');
 const newsDir = path.join(__dirname, '../config/newswire_articles.json');
 const mainLink = 'https://graph.rockstargames.com?';
-const refreshInterval = 7.2e+6; // 2 hours in milliseconds. If you would like to change it (http://www.unitconversion.org/time/seconds-to-milliseconds-conversion.html)
 const requestOptions = {
     method: 'POST',
     headers: {
@@ -287,84 +283,11 @@ class newswire {
                 return;
             }
 
-            const articles = res.data.posts.results;
-            const { Feed } = await import('feed');
-            const feed = new Feed({
-                title: "Rockstar Newswire (" + this.genre + ")",
-                description: "Latest news from Rockstar Games for " + this.genre,
-                id: "https://www.rockstargames.com/newswire",
-                link: "https://www.rockstargames.com/newswire",
-                language: "en",
-                image: "https://img.icons8.com/color/48/000000/rockstar-games.png",
-                favicon: "https://www.rockstargames.com/favicon.ico",
-                copyright: "All rights reserved by Rockstar Games",
-                updated: new Date(),
-                generator: "Rockstar Newswire RSS Generator",
-                author: {
-                    name: "Rockstar Games",
-                    link: "https://www.rockstargames.com"
-                }
-            });
+            const posts = res.data.posts.results;
 
-            articles.forEach(post => {
-                let imageUrl = "";
-                try {
-                    imageUrl = post.preview_images_parsed.newswire_block.d16x9;
-                } catch (e) { }
-
-                let link = 'https://www.rockstargames.com' + post.url;
-
-                // We will populate content later if possible, but for now we put title/preview
-                // actually we can't wait here because updateRSS is async but forEach is sync callback
-                // We should change to for...of loop to await content fetching
-            });
-
-            // Refactoring to for-of loop to support async operations
-            for (const post of articles) {
-                let imageUrl = "";
-                try {
-                    imageUrl = post.preview_images_parsed.newswire_block.d16x9;
-                } catch (e) { }
-
-                let link = 'https://www.rockstargames.com' + post.url;
-                let content = post.title; // Default fall back
-
-                try {
-                    const fullArticle = await this.getArticle(post.id);
-                    if (fullArticle) {
-                        content = this.parseContent(fullArticle);
-                    }
-                } catch (e) {
-                    console.error(`[RSS] Failed to fetch content for ${post.id}:`, e.message);
-                }
-
-                feed.addItem({
-                    title: post.title,
-                    id: post.id.toString(),
-                    link: link,
-                    description: post.title,
-                    content: content,
-                    author: [
-                        {
-                            name: "Rockstar Games",
-                            link: "https://www.rockstargames.com"
-                        }
-                    ],
-                    date: new Date(post.created),
-                    image: imageUrl
-                });
-            }
-
-            // fs.writeFileSync('feed.xml', feed.rss2());
-            //            console.log('[RSS] Feed updated successfully.');
-            // Instead of writing here, we return the feed object or articles
-            // But to keep it effectively reusable, let's just return the feed object.
-            // Actually, the index.js needs to merge items. So we should return the list of items with their content parsed.
-
-            // We need to return an array of items compatible with `feed.addItem`
+            // Single pass over the article list: fetch full content and map to feed items.
             const feedItems = [];
-            // Refactoring to for-of loop to support async operations
-            for (const post of articles) {
+            for (const post of posts) {
                 let imageUrl = "";
                 try {
                     imageUrl = post.preview_images_parsed.newswire_block.d16x9;
@@ -410,39 +333,43 @@ class newswire {
     }
 
     async getArticle(id) {
-        return new Promise((resolve, reject) => {
-            const searchParams = new URLSearchParams([
-                ['operationName', 'NewswirePost'],
-                ['variables', JSON.stringify({
-                    locale: 'en_us',
-                    id_hash: id
-                })],
-                ['extensions', JSON.stringify({
-                    persistedQuery: {
-                        version: 1,
-                        sha256Hash: '555658813abe5acc8010de1a1feddd6fd8fddffbdc35d3723d4dc0fe4ded6810'
-                    }
-                })]
-            ]);
+        const searchParams = new URLSearchParams([
+            ['operationName', 'NewswirePost'],
+            ['variables', JSON.stringify({
+                locale: 'en_us',
+                id_hash: id
+            })],
+            ['extensions', JSON.stringify({
+                persistedQuery: {
+                    version: 1,
+                    sha256Hash: '555658813abe5acc8010de1a1feddd6fd8fddffbdc35d3723d4dc0fe4ded6810'
+                }
+            })]
+        ]);
 
+        return new Promise((resolve) => {
             const req = request(mainLink + searchParams.toString(), requestOptions, (res) => {
-                if (res.statusCode < 200 || res.statusCode > 299)
-                    resolve(null); // Just return null on error to skip
+                if (res.statusCode < 200 || res.statusCode > 299) {
+                    // Consume the body so the socket is freed, then skip this article
+                    res.resume();
+                    resolve(null);
+                    return;
+                }
 
                 let responseBody = "";
                 res.on('data', (chunk) => { responseBody += chunk; });
                 res.on('end', () => {
                     try {
                         const json = JSON.parse(responseBody);
-                        if (json.data && json.data.post) {
-                            resolve(json.data.post);
-                        } else {
-                            resolve(null);
-                        }
+                        resolve(json.data && json.data.post ? json.data.post : null);
                     } catch (e) { resolve(null); }
                 });
             });
-            req.on('error', (err) => { resolve(null); });
+            req.on('timeout', () => {
+                // Destroying emits 'error' below, which resolves(null)
+                req.destroy(new Error('Article request timed out'));
+            });
+            req.on('error', () => { resolve(null); });
             req.end();
         });
     }
@@ -660,24 +587,6 @@ async function getHashToken() {
     });
     return tokenPromise;
 };
-
-// Also export setHashToken if we want to set it from outside, 
-// OR just rely on getHashToken being called externally and set internally?
-// The global `newsHash` is used in `processRequest`. 
-// We should probably allow setting it or just expose getHashToken and let the class use the global `newsHash` 
-// but wait, `processRequest` uses `newsHash` which is module-scoped. 
-// If we move `getHashToken` logic to index.js, we need a way to tell this module what the hash is.
-// OR we keep `getHashToken` here and just make it single-execution as done above.
-// But `newswire` instances need to know when `newsHash` is ready.
-
-// Let's modify the class to NOT fetch token itself in main(), but accept it or wait for it.
-// Actually, `main()` currently calls `getHashToken()`. 
-// Since `getHashToken` is now a singleton promise, multiple instances calling it will get the same promise.
-// So `newsHash = await getHashToken()` in `main()` is actually fine! 
-// The first one triggers it, others wait.
-// HOWEVER, `newsHash` is a module-level variable. 
-// If instance A sets it, instance B sets it same value. 
-// That's fine.
 
 module.exports = {
     newswire,

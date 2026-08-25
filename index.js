@@ -2,7 +2,6 @@ const fs = require('fs');
 const http = require('http');
 const yaml = require('js-yaml');
 const { newswire } = require('./src/newswire');
-// const { Feed } = require('feed'); // Replaced with dynamic import
 
 // Load Configuration
 let config;
@@ -119,8 +118,6 @@ async function createFeedObject(title, description, linkPath) {
         }
     });
 }
-
-// function createFeedObject removed (was duplicate)
 
 // Start RSS Server if enabled
 if (config.enableRSS) {
