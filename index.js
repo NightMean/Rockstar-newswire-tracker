@@ -240,6 +240,16 @@ if (config.enableRSS) {
         }
     });
 
+    // Fail with a clear message instead of a raw unhandled 'error' event
+    server.on('error', (e) => {
+        if (e.code === 'EADDRINUSE') {
+            log.error(`[SERVER] Port ${PORT} is already in use. Stop the other process or set PORT.`);
+        } else {
+            log.error('[SERVER] HTTP server error:', e);
+        }
+        process.exit(1);
+    });
+
     server.listen(PORT, () => {
         if (MERGE_FEEDS) {
             log.info(`[SERVER] RSS Feed running at http://localhost:${PORT}/feed.xml`);
